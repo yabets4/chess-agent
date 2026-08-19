@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+*.egg-info/
+
+# Runtime state (regenerated on startup)
+checkpoints/
+games_count.txt
+*.tmp
+
+# Backups
+model.pth.backup
+
+# OS
+Thumbs.db
+.DS_Store

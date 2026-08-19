@@ -1,0 +1,11 @@
+# CPU-only PyTorch from the official index keeps the image small and fast.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-chess>=1.999
+numpy>=1.26
+requests>=2.31
+# Pin for a small CPU-only wheel. If your platform uses a very new Python
+# (3.14+), bump this to a newer version, e.g. torch==2.12.1+cpu
+torch==2.6.0+cpu
