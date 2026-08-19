@@ -1,110 +1,143 @@
 # Chess RL Server
 
-A FastAPI backend that serves a small (~95k parameter) policy + value neural network
-that plays chess. It is the model engine for the React chess UI in the sibling
-[`chess-game`](../chess-game) project.
+A chess **AI backend**: a small neural network trained from scratch with PyTorch,
+plus a fast minimax engine, both exposed as a simple REST API.
 
-Self-contained, CPU-only, and ready to deploy to **Render** or **Railway** for free.
+Point any client at the API and it will suggest chess moves, evaluate positions,
+run deep searches, and even learn from games you feed it. It is CPU-only, ships
+as a single Python service, and deploys to **Render** or **Railway** out of the box.
 
-## What it does
+## What is this?
 
-- `/api/move` – picks the model's move for a FEN (temperature + checkpoint selectable)
-- `/api/eval` – neural-network evaluation of a position `[-1, 1]` (White's perspective)
-- `/api/minimax/move` – depth-limited minimax + alpha-beta search (CPU or batched GPU evals)
-- `/api/minimax/eval` – static minimax evaluator
-- `/api/train` – online RL update on finished games (outcome-based targets, no Stockfish)
-- `/api/checkpoints` – list available trained checkpoints
-- `/api/status` – health/status
+This is not the board UI — it's the brain. The project contains:
 
-Interactive API docs at `/docs` once running.
+- **A self-trained chess model.** An AlphaZero-style **policy + value network**
+  (~95k parameters) that predicts good moves and position strength. It was trained
+  by playing chess against itself thousands of times (self-play reinforcement
+  learning), no grandmaster data required. Weights are shipped in `model.pth`.
+- **A minimax engine.** A classic depth-limited alpha-beta search with move ordering
+  and quiescence, as a configurable alternative to the neural net.
+- **A training loop.** The model keeps improving: give the API finished games and
+  it updates the weights on the spot.
 
-> Stockfish was removed. Evaluation and training targets now use the neural network
-> and game outcomes only, so the server has no external engine binary or licensing concerns.
+Current playing strength is casual/amateuristic — good for a fun opponent, not a
+Stockfish killer. Everything runs on a single CPU.
 
-## Requirements
+## What it's built on
 
-- Python 3.11+ (3.9–3.13 covered by the pinned CPU torch)
-- Dependencies are in `requirements.txt`
+- **PyTorch** — the neural network (CPU or GPU)
+- **python-chess** — only for chess move generation and rules (no engine binary)
+- **FastAPI** — the REST layer, with auto-generated docs at `/docs`
 
-## Run locally
+## API
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/move` | POST | Pick a move for a position (`fen`, `temperature`, `checkpoint`) |
+| `/api/eval` | POST | Evaluate a position `[-1, 1]` (1 = winning for White) |
+| `/api/minimax/move` | POST | Depth-limited minimax + alpha-beta move (`depth`, `backend`) |
+| `/api/minimax/eval` | POST | Static minimax evaluation in centipawns and `[-1, 1]` |
+| `/api/train` | POST | Train the model on finished games (`fens`, `moves`, `outcome`) |
+| `/api/checkpoints` | GET | List available trained checkpoints |
+| `/api/status` | GET | Server health and device info |
+
+### Quick example
+
+```bash
+curl -X POST https://your-server.example.com/api/move \
+  -H "Content-Type: application/json" \
+  -d '{"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "temperature": 0.0}'
+```
+
+```json
+{"move": "e2e4", "value": 0.16, "fallback": false}
+```
+
+`fallback: true` means the model had no confident move and picked a random legal one.
+
+## Running locally
+
+Requires Python 3.9+.
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
+# source .venv/bin/activate   # macOS / Linux
 
 pip install -r requirements.txt
 python server.py
 ```
 
-The server listens on `0.0.0.0:8001` (override with the `PORT` env var). The trained
-weights are in [model.pth](model.pth); `checkpoints/` is created and populated on
-startup.
+The server starts on `http://localhost:8001` (override with the `PORT` env var).
+Open `/docs` for interactive API testing.
 
-## Deploy to Render
+## Deployment
+
+The service is stateless over HTTP and runs anywhere Python runs.
+
+<details>
+<summary><b>Deploy to Render</b></summary>
 
 1. Push this repo to GitHub.
-2. [render.com](https://render.com) → **New** → **Web Service** → connect the repo.
-3. Settings:
+2. On [render.com](https://render.com) → **New** → **Web Service** → connect the repo.
+3. Use these settings:
    - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `uvicorn server:app --host 0.0.0.0 --port $PORT`
    - **Instance Type**: Free
-4. Deploy. You get a public URL like `https://chess-rl.onrender.com`. Hit `/docs`
-   to verify.
+4. Deploy and visit `https://<your-app>.onrender.com/docs`.
+</details>
 
-## Deploy to Railway
+<details>
+<summary><b>Deploy to Railway</b></summary>
 
 1. Push this repo to GitHub.
-2. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-3. Railway auto-detects Python and runs `pip install -r requirements.txt` +
-   `uvicorn server:app --host 0.0.0.0 --port $PORT`. Set a `PORT` variable if needed
-   (Railway sets it automatically).
-4. Public URL looks like `https://chess-rl.up.railway.app`. Add a public
-   **Networking** domain to it.
+2. On [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
+3. Railway auto-detects Python and runs `pip install -r requirements.txt` and
+   `uvicorn server:app --host 0.0.0.0 --port $PORT` for you.
+4. Set up a public Networking domain to get a public URL.
+</details>
 
-## Serving the chess UI from the same deploy
+<details>
+<summary><b>Serve a frontend from the same service</b></summary>
 
-If you build the frontend and drop the static output into a `dist/` folder next to
-`server.py`, the server will serve it too — one single URL for everything:
+If you build a chess UI and place the static files in a `dist/` folder next to
+`server.py`, the server automatically serves the UI too (with SPA fallback). One
+single URL for everything, no CORS needed:
 
 ```bash
-# from the chess-game directory
+# from your frontend project
 npm run build
-# copy the output into this repo
-xcopy dist ..\chess-rl\dist\ /E /I     # Windows
+# copy the build output into this repo as /dist
 ```
 
-`server.py` automatically mounts `dist/` when present (SPA-style fallback to
-`index.html` included). This is how you get one public URL — no CORS, no second host.
+The deployment then serves both the board UI (`/`) and the model API (`/api/*`).
+</details>
 
-## ⚠️ Frontend API URL
+## Training
 
-The `chess-game` frontend currently calls `http://localhost:8001/api/...` directly.
-That must point at your deployed backend. For a same-origin deploy (above), change
-those calls to relative `/api/...`. For a separate frontend host (Vercel/Netlify),
-point it at your Render/Railway URL instead.
+The included model is already trained; these scripts are for when you want to
+continue or re-train it yourself.
 
-If the `dist/` folder is present and committed, it will be served by the deploy —
-make sure it is *not* gitignored.
+```bash
+# Self-play reinforcement learning (plays <N> games against itself every run)
+python train_rl.py 100
 
-## Training scripts (optional, local)
+# Distributed worker: plays games locally, posts them to a central server
+python train_worker.py
+```
 
-- `train_rl.py` – self-play RL loop. `python train_rl.py 100` trains 100 games.
-- `train_worker.py` – distributed self-play worker that POSTs finished games to the
-  server's `/api/train` (`TRAIN_SERVER_URL` env var selects the endpoint).
-
-Checkpoints are saved every 10 games into `checkpoints/` and are selectable from the
-UI via `/api/move`'s `checkpoint` field.
+Checkpoints are saved every 10 games into `checkpoints/`. You can select which
+checkpoint the API plays with via the `checkpoint` field of `/api/move`.
 
 ## Project layout
 
 ```
 server.py          FastAPI app (model + minimax endpoints)
-model.py           Neural network, board encoder, action space
+model.py           Neural network, board encoder, action space (4672 moves)
 minimax/           CPU and GPU-batched minimax engines
-train_rl.py        Self-play RL training
-train_worker.py    Distributed training worker
-model.pth          The trained weights (~685 KB)
+train_rl.py        Self-play reinforcement learning trainer
+train_worker.py    Distributed training worker (posts games to the server)
+model.pth          The pre-trained weights (~685 KB)
 checkpoints/       Saved training checkpoints (created at runtime)
 ```
