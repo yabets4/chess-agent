@@ -1,0 +1,15 @@
+name: keep-alive
+
+on:
+  schedule:
+    # Fire every 10 minutes so the Render free instance never idles out
+    # (Render spins down after 15 minutes without traffic).
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render service
+        run: curl -fsS -o /dev/null -w "%{http_code}\n" "https://chess-agent.onrender.com/api/status" || true
